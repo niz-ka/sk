@@ -11,7 +11,6 @@
 class Client {
     int socketFd;
     sockaddr_in address;
-
 public:
     Client();
     Client(int socketFd, sockaddr_in address);

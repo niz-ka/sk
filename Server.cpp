@@ -10,13 +10,15 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <vector>
-#include <memory>
+#include <iostream>
 #include "Server.h"
 
+// TODO - coś lepszego niż define
 #define SERVER_PORT 5050
-#define HEADER 32
+#define HEADER 4        // Długość nagłówka, ten z kolei określa długość wiadomości
+#define ACTION_HEADER 4  // Długość napisu-akcji, np. MAKE do tworzenia gry
 
-Server::Server() : socketFd(0), address({}), clients({}) {}
+Server::Server() : socketFd(0), address({}), clients({}), pollfds({}) {}
 
 size_t Server::getNumberOfClients() const {
     return this->clients.size();
@@ -89,33 +91,53 @@ void Server::terminate(const std::string& description) {
 }
 
 /**
- * Czyta dane z podanego gniazda
+ * Czyta dane z zadanego gniazda
  * @param clientFd deskryptor gniazda klienta
- * @return Liczba przeczytanych bajtów
+ * @param length wielkość danych do odczytania
+ * @param data referencja do zmiennej, w której zapisana zostanie wiadomość
+ * @return liczbę przeczytanych bajtów / 0 gdy klient się rozłączył / -1 gdy wystąpił błąd
  */
-size_t Server::readData(int clientFd) {
-    printf("[INFO] Descriptor is readable\n");
+size_t Server::readData(int clientFd, int length, std::string& data) {
+    char* message = new char[length+1];
+    size_t bytes;
+    size_t bytesRead = 0;
 
-    char messageLength[HEADER+1]{};
-    ssize_t bytes = recv(clientFd, messageLength, HEADER, 0);
+    while(bytesRead < length)
+    {
+        bytes = recv(clientFd, message + bytesRead, length - bytesRead, 0);
 
-    if(bytes == 0) {
-        this->disconnectClient(clientFd);
-        return 0;
+        if(bytes == -1) {
+            delete[] message;
+            perror("[ERROR] recv()");
+            return -1;
+        }
+
+        if(bytes == 0) {
+            delete[] message;
+            return 0;
+        }
+
+        bytesRead += bytes;
     }
 
-    if(bytes == -1) {
-        perror("[ERROR] recv() message length");
-        return -1;
-    }
+    message[length] = '\0';
+    data = std::string(message);
+    delete[] message;
 
-    messageLength[HEADER] = '\0';
-    printf("[MSG LENGTH] %s", messageLength);
+    return bytesRead;
+}
 
-    int length = 0;
+/**
+ * Konwertuje liczbę w postaci stringa do inta
+ * @param number Liczba w postaci tekstowej
+ * @return Liczbę w postaci liczbowej (-1 w przypadku błędu, TODO niezbyt trafnie jak z atoi :)
+ */
+int Server::stringToInt(const std::string& number) {
+
+    int numberInt;
 
     try {
-        length = std::stoi(messageLength);
+        numberInt = std::stoi(number);
     } catch (const std::invalid_argument& ia) {
         perror("[ERROR] Conversion impossible");
         return -1;
@@ -124,33 +146,31 @@ size_t Server::readData(int clientFd) {
         return -1;
     }
 
-    char* buf = new char[length+1];
-    bytes = recv(clientFd, buf, length, 0);
-    if(bytes == 0) {
-        this->disconnectClient(clientFd);
-        return 0;
+    return numberInt;
+
+}
+
+/**
+ * Podejmuje akcję w zależności od otrzymanej wiadomości
+ * @param message wiadomość przesłana przez klienta
+ */
+void Server::makeAction(const std::string& message) {
+    std::cout << "[MESSAGE] " << message << std::endl;
+
+    std::string action = message.substr(0, ACTION_HEADER);
+
+    // TODO - może jakiś enum class ...
+    if(action == "MAKE") {
+        std::cout << "[ACTION] The game is created..." << std::endl;
     }
 
-    if(bytes == -1) {
-        perror("[ERROR] recv() message length");
-        return -1;
-    }
-
-    buf[length] = '\0';
-
-    printf("[MESSAGE] %s", buf);
-    delete[] buf;
-
-    return bytes;
+    // ...
 }
 
 /**
  * Uruchamia serwer
  */
 void Server::run() {
-
-    std::vector<pollfd> pollfds{}; // Przechowuje struktury pollfd dla poll
-    const int opt = 1;
 
     this->socketFd = socket(PF_INET, SOCK_STREAM, 0);
     if(this->socketFd == -1) {
@@ -159,8 +179,9 @@ void Server::run() {
     }
 
     // Umożliwiaj ponownie bindowanie od razu
+    const int opt = 1;
     if(setsockopt(socketFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) == - 1) {
-        terminate("setsockopt()");
+        this->terminate("setsockopt()");
     }
 
     this->address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -173,6 +194,7 @@ void Server::run() {
         this->terminate("bind()");
     }
 
+    // TODO magic value
     if(listen(this->socketFd, 32) == -1) {
         this->terminate("listen()");
     }
@@ -215,19 +237,43 @@ void Server::run() {
             if(pollfds[i].fd == this->socketFd) {
                 int clientSocket = this->connectClient();
                 if(clientSocket != -1) {
-                    pollfds.push_back(pollfd{clientSocket, POLLIN, 0});
+                    this->pollfds.push_back(pollfd{clientSocket, POLLIN, 0});
                     ++pollfds_size;
                 }
-
             } else {
-                size_t bytes = this->readData(pollfds[i].fd);
+                printf("[INFO] Descriptor is readable\n");
+                int clientFd = pollfds[i].fd;
 
+                // TODO - zrobić porządek, skomplikowana obsługa błędów
+
+                // Odbierz długość wiadomości
+                std::string messageLength;
+                size_t bytes = this->readData(clientFd, HEADER, messageLength);
                 if(bytes == 0) {
+                    this->disconnectClient(clientFd);
                     pollfds.erase(pollfds.begin() + (long)i);
-                    --pollfds_size;
-                    --i;
+                    --pollfds_size; --i;
                 }
 
+                if(bytes == 0 || bytes == -1) continue;
+
+                // Konwersja string -> int
+                int length = stringToInt(messageLength);
+                if(length == -1) continue;
+
+                // Odbierz wiadomość o długości przesłanej w nagłówku
+                std::string message;
+                bytes = this->readData(clientFd, length, message);
+                if(bytes == 0) {
+                    this->disconnectClient(clientFd);
+                    pollfds.erase(pollfds.begin() + (long)i);
+                    --pollfds_size; --i;
+                }
+
+                if(bytes == 0 || bytes == -1) continue;
+
+                // Podejmij akcję w zależności od wiadomości
+                this->makeAction(message);
             }
 
 

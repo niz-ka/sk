@@ -10,13 +10,14 @@
 #include <unordered_map>
 #include <string>
 #include <sys/poll.h>
+#include <vector>
 #include "Client.h"
 
 class Server {
     int socketFd;
     sockaddr_in address;
     std::unordered_map<int, Client> clients;
-
+    std::vector<pollfd> pollfds;
 public:
     Server();
     void run();
@@ -26,7 +27,9 @@ private:
     size_t getNumberOfClients() const;
     void disconnectClient(int clientFd);
     int connectClient();
-    size_t readData(int clientFd);
+    static size_t readData(int clientFd, int length, std::string& data);
+    static int stringToInt(const std::string& number);
+    void makeAction(const std::string &message);
 };
 
 
