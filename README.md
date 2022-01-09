@@ -11,7 +11,7 @@ Długość wiadomości określa makro `HEADER` (domyślnie 4), długość akcji 
 4 to więc długość wiadomości (czyli `MAKE`) po której następują 3 dopełniające znaki (spacje bądź null), a później wspomniana wiadomość. 
 Taka wiadomość od klienta będzie, miejmy nadzieję, w niedalekiej przyszłości tworzyć nową grę.
 
-**Uwaga: `client.h` oraz `client.cpp` to klient, a jedynie klasy trzymające informacje o kliencie!**
+**Uwaga: `client.h` oraz `client.cpp` to NIE klient, a jedynie klasy trzymające informacje o kliencie!**
 
 ---
 
