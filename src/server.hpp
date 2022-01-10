@@ -11,7 +11,7 @@
 #include <string>
 #include <sys/poll.h>
 #include <vector>
-#include "Client.h"
+#include "client.hpp"
 
 class Server {
     int socketFd;

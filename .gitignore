@@ -102,3 +102,6 @@ cmake-build-debug
 
 # CLion
 .idea
+
+.vscode/
+build/

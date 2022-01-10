@@ -11,7 +11,7 @@
 #include <arpa/inet.h>
 #include <vector>
 #include <iostream>
-#include "Server.h"
+#include "server.hpp"
 
 // TODO - coś lepszego niż define
 #define SERVER_PORT 5050
