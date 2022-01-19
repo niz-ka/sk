@@ -1,3 +1,9 @@
 [submodule "vendor/toml"]
 	path = vendor/toml
 	url = https://github.com/ToruNiina/toml11.git
+[submodule "vendor/spdlog"]
+	path = vendor/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "vendor/doctest"]
+	path = vendor/doctest
+	url = https://github.com/doctest/doctest.git

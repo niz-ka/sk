@@ -1,14 +1,22 @@
-// #include "Server.h"
 
-#include <iostream>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreorder"
+#include <spdlog/spdlog.h>
+#include <spdlog/async.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#pragma GCC diagnostic pop
 
 #include "config.hpp"
+#include "server.hpp"
+
 int main()
 {
+    auto logger = spdlog::stdout_color_mt<spdlog::async_factory>("console");
+
     Config config = Config::from("config.toml");
 
-    std::cout << "Config\n\tport: " << config.port << "\n\tmax connection count: " << config.max_connection_count << "\n\tconnection timeout: " << config.connection_timeout << std::endl;
-    // Server server;
-    // server.run();
+    Server server(std::move(config));
+    server.run();
+
     return 0;
 }
