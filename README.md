@@ -16,4 +16,27 @@ Taka wiadomość od klienta będzie, miejmy nadzieję, w niedalekiej przyszłoś
 ---
 
 ### Gałąź client (KLIENT)
-Klient napisany w Java (GUI w Swing) z użyciem `java.io` (przynajmniej na razie). 
+Klient napisany w Java (GUI w Swing) z użyciem `java.io` (przynajmniej na razie).
+
+## Installation
+
+```bash
+git clone --recurse-submodules https://github.com/niz-ka/sk.git kahoot
+cd kahoot
+cmake -S . -B build
+cmake --build build
+./build/kahoot-server
+```
+
+or if you already cloned repo:
+
+```bash
+git pull
+git submodule update --init --recursive
+cmake -S . -B build
+cmake --build build
+./build/kahoot-server
+```
+
+This will run server with configuration defined in `config.toml`
+

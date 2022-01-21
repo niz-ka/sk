@@ -3,3 +3,4 @@ port = 2022
 
 [connections]
 timeout = 5000
+max_count = 250

@@ -18,7 +18,7 @@ if(LTO_SUPPORT)
     set_target_properties(kahoot-server PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
-target_include_directories(kahoot-server PRIVATE vendor/toml vendor/spdlog/include vendor/doctest)
+target_include_directories(kahoot-server PRIVATE vendor/toml vendor/spdlog/include vendor/doctest vendor/expected/include/tl/)
 target_link_libraries(kahoot-server PRIVATE pthread)
 
 

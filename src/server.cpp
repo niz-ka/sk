@@ -1,38 +1,22 @@
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
 #include "server.hpp"
 
-#define HEADER 4        // Długość nagłówka, ten z kolei określa długość wiadomości
-#define ACTION_HEADER 4 // Długość napisu-akcji, np. MAKE do tworzenia gry
+constexpr int QUEUE_LENGTH = 32;
 
 Server::Server(Config &&config)
-    : m_config(std::move(config)), m_socket_fd(0), m_address({}), m_clients({}), m_pollfds({})
+    : m_config(std::move(config)), m_socket_fd(-1), m_epoll_fd(-1), m_clients({}), m_pollfds({})
 {
     m_logger = spdlog::get("console");
+    m_address = {
+        .sin_family = AF_INET,
+        .sin_port = htons(m_config.port),
+        .sin_addr = {.s_addr = htonl(INADDR_ANY)},
+        .sin_zero = {},
+    };
 }
-
-// size_t Server::getNumberOfClients() const
-// {
-//     return m_clients.size();
-// }
-
-// /**
-//  * Zamyka gniazdo i usuwa klienta z listy klientów
-//  * @param clientFd deskryptor gniazda klienta
-//  */
-// void Server::disconnectClient(int clientFd)
-// {
-//     printf("[INFO] Client with address %s and port %d disconnected. Number of clients: %zu\n",
-//            inet_ntoa(m_clients[clientFd].getAddressPointer()->sin_addr),
-//            m_clients[clientFd].getAddressPointer()->sin_port,
-//            getNumberOfClients() - 1);
-//
-//     shutdown(clientFd, SHUT_RDWR);
-//     close(clientFd);
-//
-//     m_clients.erase(clientFd);
-// }
 
 // /**
 //  * Akceptuje nowego klienta i dodaje do listy klientów
@@ -72,7 +56,7 @@ void Server::terminate(const std::string &description)
 {
     m_logger->critical(description);
 
-    // Closed all opened clients' sockets.
+    // Close all opened clients' sockets.
     for (const auto &[client, _] : m_clients)
     {
         shutdown(client, SHUT_RDWR);
@@ -88,100 +72,60 @@ void Server::terminate(const std::string &description)
     exit(EXIT_FAILURE);
 }
 
-// /**
-//  * Czyta dane z zadanego gniazda
-//  * @param clientFd deskryptor gniazda klienta
-//  * @param length wielkość danych do odczytania
-//  * @param data referencja do zmiennej, w której zapisana zostanie wiadomość
-//  * @return liczbę przeczytanych bajtów / 0 gdy klient się rozłączył / -1 gdy wystąpił błąd
-//  */
-// size_t Server::readData(int clientFd, int length, std::string &data)
-// {
-//     char *message = new char[length + 1];
-//     size_t bytes;
-//     size_t bytesRead = 0;
-//
-//     while (bytesRead < length)
-//     {
-//         bytes = recv(clientFd, message + bytesRead, length - bytesRead, 0);
-//
-//         if (bytes == -1)
-//         {
-//             delete[] message;
-//             perror("[ERROR] recv()");
-//             return -1;
-//         }
-//
-//         if (bytes == 0)
-//         {
-//             delete[] message;
-//             return 0;
-//         }
-//
-//         bytesRead += bytes;
-//     }
-//
-//     message[length] = '\0';
-//     data = std::string(message);
-//     delete[] message;
-//
-//     return bytesRead;
-// }
-
-// /**
-//  * Konwertuje liczbę w postaci stringa do inta
-//  * @param number Liczba w postaci tekstowej
-//  * @return Liczbę w postaci liczbowej (-1 w przypadku błędu, TODO niezbyt trafnie jak z atoi :)
-//  */
-// int Server::stringToInt(const std::string &number)
-// {
-//
-//     int numberInt;
-//
-//     try
-//     {
-//         numberInt = std::stoi(number);
-//     }
-//     catch (const std::invalid_argument &ia)
-//     {
-//         perror("[ERROR] Conversion impossible");
-//         return -1;
-//     }
-//     catch (const std::out_of_range &ofr)
-//     {
-//         perror("[ERROR] Conversion out ouf range");
-//         return -1;
-//     }
-//
-//     return numberInt;
-// }
-
-// /**
-//  * Podejmuje akcję w zależności od otrzymanej wiadomości
-//  * @param message wiadomość przesłana przez klienta
-//  */
-// void Server::makeAction(const std::string &message)
-// {
-//     std::cout << "[MESSAGE] " << message << std::endl;
-//
-//     std::string action = message.substr(0, ACTION_HEADER);
-//
-//     // TODO - może jakiś enum class ...
-//     if (action == "MAKE")
-//     {
-//         std::cout << "[ACTION] The game is created..." << std::endl;
-//     }
-//
-//     // ...
-// }
-
-/**
- * Server main loop.
- */
-void Server::run()
+tl::expected<void, Server::Error> Server::make_socket_nonblocking(int socket_fd)
 {
+    int flags = fcntl(socket_fd, F_GETFL);
+    if (flags != -1)
+    {
+        flags |= O_NONBLOCK;
+        int status = fcntl(socket_fd, F_SETFL, flags);
+        if (status != -1)
+        {
+            return {};
+        }
+    }
 
-    m_socket_fd = socket(PF_INET, SOCK_STREAM, 0);
+    std::string msg = "cannot set socket as nonblocking. call to fcntl() failed. error: ";
+    msg.reserve(200);
+
+    switch (errno)
+    {
+    case EACCES:
+        msg.append("EACCES Operation is prohibited by locks held by other processes.");
+        break;
+
+    case EAGAIN:
+        msg.append("The operation is prohibited because the file has been memory-mapped by another process.");
+        break;
+
+    case EBADF:
+        msg.append("EBADF Supplied descriptor is not a valid file descriptor.");
+        break;
+
+    case EFAULT:
+        msg.append("EFAULT Lock is outside your accessible address space.");
+        break;
+
+    case EINVAL:
+        msg.append("EINVAL The value specified in cmd is not recognized by this kernel.");
+        break;
+
+    case ENOLCK:
+        msg.append("ENOLCK Too many segment locks open, lock table is full, or a remote locking protocol failed(e.g., locking over NFS)");
+        break;
+
+    default:
+        msg.append("Unknown error.");
+    }
+
+    errno = 0;
+
+    return tl::make_unexpected(Server::Error(std::move(msg)));
+}
+
+void Server::create_socket()
+{
+    m_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (m_socket_fd == -1)
     {
         std::string msg = "cannot create socket. call to socket() failed. error: ";
@@ -190,7 +134,7 @@ void Server::run()
         switch (errno)
         {
         case EACCES:
-            msg.append("EACCES Permition denied.");
+            msg.append("EACCES Permission denied.");
             break;
 
         case EAFNOSUPPORT:
@@ -227,123 +171,297 @@ void Server::run()
         terminate(msg);
     }
 
-    // TODO: From here
-
-    // Umożliwiaj ponownie bindowanie od razu
-    const int opt = 1;
-    if (setsockopt(m_socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) == -1)
+    // Allow instant rebinding in case of server restart.
+    const int enabled = 1;
+    if (setsockopt(m_socket_fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(int)) == -1)
     {
-        terminate("setsockopt()");
+        std::string msg = "cannot set socket options. call to setsockopt() failed. error: ";
+        msg.reserve(200);
+
+        switch (errno)
+        {
+        case EBADF:
+            msg.append("EBADF Socket descriptor is invalid.");
+            break;
+
+        case EFAULT:
+            msg.append("EFAULT Address of option enabling flagg is outside of process address space.");
+            break;
+
+        case EINVAL:
+            msg.append("EINVAL Invalid size of enabling flag.");
+            break;
+
+        case ENOPROTOOPT:
+            msg.append("ENOPROTOOPT Unknown flag at indicated level.");
+            break;
+
+        case ENOTSOCK:
+            msg.append("ENOTSOCK Given descriptor does not refer to a socket.");
+            break;
+
+        default:
+            msg.append("Unknown error.");
+            break;
+        }
+
+        terminate(msg);
     }
 
-    m_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    m_address.sin_port = htons(m_config.port);
-    m_address.sin_family = AF_INET;
-    memset(&m_address.sin_zero, 0, sizeof(m_address.sin_zero));
+    auto result = make_socket_nonblocking(m_socket_fd);
+    if (!result)
+    {
+        terminate(result.error().description());
+    }
+}
 
+void Server::bind_socket()
+{
     if (bind(m_socket_fd, (sockaddr *)&m_address, sizeof(sockaddr_in)) == -1)
     {
-        this->terminate("bind()");
-    }
+        std::string msg = "cannot bind port. call to bind() failed. error: ";
+        msg.reserve(200);
 
-    // TODO magic value
-    if (listen(m_socket_fd, 32) == -1)
+        switch (errno)
+        {
+        case EACCES:
+            msg.append("EACCES The address is protected, and the user is not the superuser.");
+            break;
+
+        case EADDRINUSE:
+            msg.append("EADDRINUSE The given address is already in use.");
+            break;
+
+        case EBADF:
+            msg.append("EBADF Socket descriptor is invalid.");
+            break;
+
+        case EINVAL:
+            msg.append("EINVAL The socket is already bound to an address or address is not valid for socket's domain.");
+            break;
+
+        case ENOTSOCK:
+            msg.append("ENOTSOCK Given descriptor does not refer to a socket.");
+            break;
+
+        default:
+            msg.append("Unknown error.");
+            break;
+        }
+
+        terminate(msg);
+    }
+}
+
+void Server::listen_on_socket()
+{
+    if (listen(m_socket_fd, QUEUE_LENGTH) == -1)
     {
-        this->terminate("listen()");
+        std::string msg = "cannot listen on given port. call to listen() failed. error: ";
+        msg.reserve(200);
+
+        switch (errno)
+        {
+        case EADDRINUSE:
+            msg.append("EADDRINUSE Another socket is already listening on the same port.");
+            break;
+
+        case EBADF:
+            msg.append("EBADF Socket descriptor is invalid.");
+            break;
+
+        case ENOTSOCK:
+            msg.append("ENOTSOCK Given descriptor does not refer to a socket.");
+            break;
+
+        case EOPNOTSUPP:
+            msg.append("EOPNOTSUPP Socket does not support listening on it.");
+            break;
+
+        default:
+            msg.append("Unknown error.");
+            break;
+        }
+
+        terminate(msg);
+    }
+}
+
+void Server::init_epoll()
+{
+    m_epoll_fd = epoll_create1(0);
+    if (m_epoll_fd == -1)
+    {
+        std::string msg = "cannot create epoll descriptor. call to epoll_create1() failed. error: ";
+        msg.reserve(200);
+
+        switch (errno)
+        {
+        case EINVAL:
+            msg.append("EINVAL Invalid value specified in flags.");
+            break;
+        case EMFILE:
+            msg.append("EMFILE The user reached max number of epoll instances or open file descriptors.");
+            break;
+
+        case ENFILE:
+            msg.append("ENFILE Maximum number of open files for operating system reached.");
+            break;
+
+        case ENOMEM:
+            msg.append("ENOMEM Not enough memory available.");
+            break;
+
+        default:
+            msg.append("Unknown error.");
+            break;
+        }
+
+        terminate(msg);
     }
 
-    m_logger->info("Server is listening on ADDRESS: {} | PORT: {}", inet_ntoa(m_address.sin_addr), htons(m_address.sin_port));
+    m_epoll_listener = epoll_event{
+        .events = EPOLLIN,
+        .data{
+            .fd = m_socket_fd,
+        },
+    };
 
-    m_pollfds.push_back({m_socket_fd, POLLIN, 0});
+    int epoll_ctl_status = epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, m_socket_fd, &m_epoll_listener);
+    if (epoll_ctl_status == -1)
+    {
+        std::string msg = "cannot add epoll event. call to epoll_ctl() failed. error: ";
+        msg.reserve(200);
 
-    // // Główna pętla programu
-    // #pragma GCC diagnostic push
-    // #pragma ide diagnostic ignored "EndlessLoop"
-    //     while (true)
-    //     {
-    //         int error_flag = poll(m_pollfds.data(), m_pollfds.size(), -1);
-    //
-    //         // Przekroczono czas oczekiwania na zdarzenie (trzeci argument poll)
-    //         if (error_flag == 0)
-    //         {
-    //             this->terminate("poll() timeout");
-    //         }
-    //
-    //         // Błąd poll!
-    //         if (error_flag == -1)
-    //         {
-    //             this->terminate("poll()");
-    //         }
-    //
-    //         // Uwaga na iterowanie z jednoczesną modyfikacją!
-    //         auto pollfds_size = m_pollfds.size();
-    //         for (std::vector<pollfd>::size_type i = 0; i < pollfds_size; ++i)
-    //         {
-    //
-    //             // Nic wartego uwagi się nie wydarzyło
-    //             if (m_pollfds[i].revents == 0)
-    //                 continue;
-    //
-    //             // Wszystko inne niż POLLIN to błąd!
-    //             if (m_pollfds[i].revents != POLLIN)
-    //             {
-    //                 this->terminate("poll()");
-    //             }
-    //
-    //             // Zgłoszenie na gnieździe nasłuchującym
-    //             if (m_pollfds[i].fd == m_socket_fd)
-    //             {
-    //                 int clientSocket = this->connectClient();
-    //                 if (clientSocket != -1)
-    //                 {
-    //                     m_pollfds.push_back(pollfd{clientSocket, POLLIN, 0});
-    //                     ++pollfds_size;
-    //                 }
-    //             }
-    //             else
-    //             {
-    //                 printf("[INFO] Descriptor is readable\n");
-    //                 int clientFd = m_pollfds[i].fd;
-    //
-    //                 // TODO - zrobić porządek, skomplikowana obsługa błędów
-    //
-    //                 // Odbierz długość wiadomości
-    //                 std::string messageLength;
-    //                 size_t bytes = this->readData(clientFd, HEADER, messageLength);
-    //                 if (bytes == 0)
-    //                 {
-    //                     this->disconnectClient(clientFd);
-    //                     m_pollfds.erase(m_pollfds.begin() + (long)i);
-    //                     --pollfds_size;
-    //                     --i;
-    //                 }
-    //
-    //                 if (bytes == 0 || bytes == -1)
-    //                     continue;
-    //
-    //                 // Konwersja string -> int
-    //                 int length = stringToInt(messageLength);
-    //                 if (length == -1)
-    //                     continue;
-    //
-    //                 // Odbierz wiadomość o długości przesłanej w nagłówku
-    //                 std::string message;
-    //                 bytes = this->readData(clientFd, length, message);
-    //                 if (bytes == 0)
-    //                 {
-    //                     this->disconnectClient(clientFd);
-    //                     m_pollfds.erase(m_pollfds.begin() + (long)i);
-    //                     --pollfds_size;
-    //                     --i;
-    //                 }
-    //
-    //                 if (bytes == 0 || bytes == -1)
-    //                     continue;
-    //
-    //                 // Podejmij akcję w zależności od wiadomości
-    //                 this->makeAction(message);
-    //             }
-    // }
-    // }
-    // #pragma GCC diagnostic pop
+        switch (errno)
+        {
+        case EBADF:
+            msg.append("EBADF Invalid epoll descriptor.");
+            break;
+
+        case EEXIST:
+            msg.append("EEXIST Descriptor already registered in epoll.");
+            break;
+
+        case EINVAL:
+            msg.append("EINVAL Invalid epoll descriptor or watched descriptor is the same as epoll descriptor or given operation is invalid.");
+            break;
+
+        case ELOOP:
+            msg.append("ELOOP Watched descriptor refers to another epoll instance and could result in circular dependency.");
+            break;
+
+        case ENOENT:
+            msg.append("ENOENT Operation was EPOLL_CTL_MOD or EPOLL_CTL_DEL and supplied descriptor was not registered in epoll instance.");
+            break;
+
+        case ENOMEM:
+            msg.append("ENOMEM Not enough memory available.");
+            break;
+
+        case ENOSPC:
+            msg.append("ENOSPC Maximum number of allowed user watches reached.");
+            break;
+
+        case EPERM:
+            msg.append("EPERM Supplied descriptor does not support epoll.");
+            break;
+
+        default:
+            msg.append("Unknown error.");
+            break;
+        }
+
+        terminate(msg);
+    }
+}
+
+void Server::connect_client()
+{
+    // TODO: Implement client connection accept & redirection.
+}
+
+void Server::incoming_connections_cleanup() {
+    std::vector<decltype(m_incoming_connections.begin())> indices(m_incoming_connections.size());
+
+    // Create list of elements to remove.
+    // If future state is ready, then it finished it's work and can be removed.
+    for(auto iter = m_incoming_connections.begin(); iter != m_incoming_connections.end(); ++iter) {
+        if ((*iter).wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            indices.push_back(iter);
+        }
+    }
+
+    // To be verified. As we go from last iterator, provious ones shouldn't be invalidated.
+    // But removing elements from vector in C++ is tricky AF, so I can't tell if it will work always properly.
+    for(auto iter = indices.rbegin(); iter != indices.rend(); ++iter) {
+        m_incoming_connections.erase(*iter);
+    }
+}
+
+/**
+ * Server main loop.
+ */
+void Server::run()
+{
+
+    create_socket();
+
+    bind_socket();
+
+    listen_on_socket();
+
+    init_epoll();
+
+    m_logger->info("Server is listening on ADDRESS: {} | PORT: {} | MAX CONNECTIONS: {}", inet_ntoa(m_address.sin_addr), htons(m_address.sin_port), m_config.max_connection_count);
+
+    epoll_event socket_answer{};
+    std::string msg;
+    msg.reserve(256);
+
+    // Server should work indefinitely, unless it's restarted or critical error occurs.
+    while (true)
+    {
+        // Server can wait indefinitely, unless some connection is made.
+        int epoll_status = epoll_wait(m_epoll_fd, &socket_answer, 1, -1);
+        if (epoll_status == -1)
+        {
+            msg.clear();
+            msg.append("epoll returned with error: ");
+
+            switch (errno)
+            {
+            case EBADF:
+                msg.append("EBADF Invalid epoll descriptor supplied.");
+                break;
+
+            case EFAULT:
+                msg.append("EFAULT The memory area pointed to by events is not accessible with write permissions.");
+                break;
+
+            case EINTR:
+                msg.append("EINTR The  call  was  interrupted by a signal handler before the requested events occurred.");
+                break;
+
+            case EINVAL:
+                msg.append("EINVAL Invalid epoll descriptor, or maxevents is less than or equal to zero.");
+                break;
+
+            default:
+                msg.append("Unknown error.");
+                break;
+            }
+
+            m_logger->error(msg);
+
+            continue;
+        }
+
+        // epoll can return only 1 result, as only server listening socket is watched.
+        // Because `accept` can block, we spawn it in another thread.
+        m_incoming_connections.emplace_back(std::async(std::launch::async, &Server::connect_client, this));
+
+        // For now it blocks, but maybe in future it will work in separate thread?
+        incoming_connections_cleanup();
+    }
 }
