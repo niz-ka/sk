@@ -47,14 +47,5 @@ cmake --build build
 ./build/kahoot-server
 ```
 
-or if you already cloned repo:
-
-```bash
-cd server
-cmake -S . -B build
-cmake --build build
-./build/kahoot-server
-```
-
 This will run server with configuration defined in `config.toml` (from current working directory).
 
