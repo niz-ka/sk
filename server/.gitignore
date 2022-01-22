@@ -107,4 +107,4 @@ cmake-build-debug
 build/
 
 # Remote submodules
-vendor/
+# vendor/
