@@ -15,9 +15,10 @@ Written in C++ using Linux's implementation of BSD sockets API.
 Single platform, requires Linux kernel >= 2.6 (usage of epoll).
 
 Other requirements:
-    - C++17-compliant compiler (GCC 7+ or Clang 5+)
-    - libpthread support
-    - Cmake
+
+- C++17-compliant compiler (GCC 7+ or Clang 5+)
+- libpthread support
+- Cmake
 
 ## Installation
 
@@ -34,6 +35,8 @@ git submodule update --init --recursive
 ```
 
 ### Client
+
+TODO
 
 ### Server
 
