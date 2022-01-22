@@ -3,11 +3,12 @@
 #include <arpa/inet.h>
 
 #include "server.hpp"
+#include "error.hpp"
 
 constexpr int QUEUE_LENGTH = 32;
 
 Server::Server(Config &&config)
-    : m_config(std::move(config)), m_socket_fd(-1), m_epoll_fd(-1), m_clients({}), m_pollfds({})
+    : m_config(std::move(config)), m_socket_fd(-1), m_epoll_fd(-1), m_clients({})
 {
     m_logger = spdlog::get("console");
     m_address = {
@@ -69,7 +70,9 @@ void Server::terminate(const std::string &description)
     shutdown(m_socket_fd, SHUT_RDWR);
     close(m_socket_fd);
 
-    exit(EXIT_FAILURE);
+    // This should be handled in appropriate scope.
+    // If not handled will terminate server main thread.
+    throw CriticalError();
 }
 
 tl::expected<void, Server::Error> Server::make_socket_nonblocking(int socket_fd)
@@ -376,26 +379,41 @@ void Server::init_epoll()
     }
 }
 
-void Server::connect_client()
+void Server::connect_clients()
 {
-    // TODO: Implement client connection accept & redirection.
-}
+    // We have a notification on the listening socket, which means one **or more** incoming connections.
+    while (true)
+    {
+        sockaddr_in in_addr;
+        socklen_t in_len = sizeof(in_addr);
 
-void Server::incoming_connections_cleanup() {
-    std::vector<decltype(m_incoming_connections.begin())> indices(m_incoming_connections.size());
-
-    // Create list of elements to remove.
-    // If future state is ready, then it finished it's work and can be removed.
-    for(auto iter = m_incoming_connections.begin(); iter != m_incoming_connections.end(); ++iter) {
-        if ((*iter).wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            indices.push_back(iter);
+        in_len = sizeof in_addr;
+        int connection = accept(m_socket_fd, reinterpret_cast<sockaddr *>(&in_addr), &in_len);
+        if (connection == -1)
+        {
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                // All incoming connections have been processed.
+                break;
+            }
+            else
+            {
+                // I don't really think I want to resolve errno myself here ¯\_(ツ)_/¯, so std::strerror comes into action.
+                m_logger->error("connection error. accept() failed with error: {}", std::strerror(errno));
+                errno = 0;
+                continue;
+            }
         }
-    }
 
-    // To be verified. As we go from last iterator, provious ones shouldn't be invalidated.
-    // But removing elements from vector in C++ is tricky AF, so I can't tell if it will work always properly.
-    for(auto iter = indices.rbegin(); iter != indices.rend(); ++iter) {
-        m_incoming_connections.erase(*iter);
+        // Make the incoming socket non-blocking and add it to the list of fds to monitor.
+        auto status = make_socket_nonblocking(connection);
+        if (!status)
+        {
+            m_logger->error(status.error().description());
+            close(connection);
+        }
+
+        m_clients[connection] = Client(connection, in_addr);
     }
 }
 
@@ -458,10 +476,8 @@ void Server::run()
         }
 
         // epoll can return only 1 result, as only server listening socket is watched.
-        // Because `accept` can block, we spawn it in another thread.
-        m_incoming_connections.emplace_back(std::async(std::launch::async, &Server::connect_client, this));
-
-        // For now it blocks, but maybe in future it will work in separate thread?
-        incoming_connections_cleanup();
+        // Because we've made listening socket nonblocking, we can accept new connections in this thread
+        // without blocking it undefinitely.
+        connect_clients();
     }
 }

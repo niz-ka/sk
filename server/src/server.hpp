@@ -36,6 +36,7 @@ private:
         Error() = delete;
         Error(const std::string &description) : m_description(description) {}
         Error(std::string &&description) : m_description(std::move(description)) {}
+        ~Error() = default;
 
         const std::string &description() { return m_description; }
     };
@@ -46,17 +47,10 @@ private:
     void bind_socket();
     void listen_on_socket();
     void init_epoll();
+    void connect_clients();
+    void resolve_clients();
 
-    void connect_client();
     static tl::expected<void, Error> make_socket_nonblocking(int socket_fd);
-
-    void incoming_connections_cleanup();
-    // size_t getNumberOfClients() const;
-    // void disconnectClient(int clientFd);
-    // int connectClient();
-    // static size_t readData(int clientFd, int length, std::string &data);
-    // static int stringToInt(const std::string &number);
-    // void makeAction(const std::string &message);
 
 private:
     std::shared_ptr<spdlog::logger> m_logger;
@@ -69,9 +63,8 @@ private:
     epoll_event m_epoll_listener;
     epoll_event m_epoll_event;
 
-    std::vector<std::future<void>> m_incoming_connections;
-
     std::unordered_map<int, Client> m_clients;
-    std::vector<pollfd> m_pollfds;
     std::mutex m_connection_mutex;
+
+    std::thread m_resolve_clients;
 };

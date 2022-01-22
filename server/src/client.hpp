@@ -1,22 +1,18 @@
-//
-// Created by kamil on 08.01.2022.
-//
-
-#ifndef SIECI_PROJEKT_CLIENT_H
-#define SIECI_PROJEKT_CLIENT_H
+#pragma once
 
 #include <netinet/in.h>
 #include <sys/poll.h>
 
-class Client {
-    int socketFd;
-    sockaddr_in address;
+class Client
+{
 public:
-    Client();
-    Client(int socketFd, sockaddr_in address);
-    int getSocketFd() const;
-    sockaddr_in* getAddressPointer();
+    Client() = default;
+    constexpr Client(int socketfd, sockaddr_in address) : m_socket_fd(socketfd), m_address(address) {}
+
+    constexpr int get_socket_fd() const { return m_socket_fd; }
+    const sockaddr_in *get_address() const { return &m_address; }
+
+private:
+    int m_socket_fd;
+    sockaddr_in m_address;
 };
-
-
-#endif //SIECI_PROJEKT_CLIENT_H
