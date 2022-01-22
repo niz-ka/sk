@@ -1,12 +1,12 @@
 [submodule "vendor/toml"]
-	path = vendor/toml
+	path = server/vendor/toml
 	url = https://github.com/ToruNiina/toml11.git
 [submodule "vendor/spdlog"]
-	path = vendor/spdlog
+	path = server/vendor/spdlog
 	url = https://github.com/gabime/spdlog.git
 [submodule "vendor/doctest"]
-	path = vendor/doctest
+	path = server/vendor/doctest
 	url = https://github.com/doctest/doctest.git
 [submodule "vendor/expected"]
-	path = vendor/expected
+	path = server/vendor/expected
 	url = https://github.com/TartanLlama/expected.git

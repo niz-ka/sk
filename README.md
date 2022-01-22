@@ -1,28 +1,44 @@
-# Sieci komputerowe - aplikacja quiz
-### Gałąź master (SERWER)
-Serwer napisany z użyciem BSD sockets w C/C++. Nasłuchuje domyślnie na adresie `127.0.0.1` i porcie `5050`. Serwer korzysta z `poll` i oczekuje wiadomości w formie:
-    
-    [DŁUGOŚĆ WIADOMOŚCI] [AKCJA] [OPCJONALNIE RESZTA]
+# SK - Kahoot
 
-Długość wiadomości określa makro `HEADER` (domyślnie 4), długość akcji makro `ACTION_HEADER` (domyślnie 4). Przykład wiadomości:
+## Structure
 
-    4   MAKE
+Application is written in two parts: client and server.
 
-4 to więc długość wiadomości (czyli `MAKE`) po której następują 3 dopełniające znaki (spacje bądź null), a później wspomniana wiadomość. 
-Taka wiadomość od klienta będzie, miejmy nadzieję, w niedalekiej przyszłości tworzyć nową grę.
+### Client
 
-**Uwaga: `client.h` oraz `client.cpp` to NIE klient, a jedynie klasy trzymające informacje o kliencie!**
+Written in Java, using `java.io` and Java Swing for GUI.
 
----
 
-### Gałąź client (KLIENT)
-Klient napisany w Java (GUI w Swing) z użyciem `java.io` (przynajmniej na razie).
+### Server
+
+Written in C++ using Linux's implementation of BSD sockets API.
+Single platform, requires Linux kernel >= 2.6 (usage of epoll).
+
+Other requirements:
+    - C++17-compliant compiler (GCC 7+ or Clang 5+)
+    - libpthread support
+    - Cmake
 
 ## Installation
 
 ```bash
 git clone --recurse-submodules https://github.com/niz-ka/sk.git kahoot
 cd kahoot
+```
+or if you already cloned repo:
+
+```bash
+cd <repo-dir>
+git pull
+git submodule update --init --recursive
+```
+
+### Client
+
+### Server
+
+```bash
+cd server
 cmake -S . -B build
 cmake --build build
 ./build/kahoot-server
@@ -31,12 +47,11 @@ cmake --build build
 or if you already cloned repo:
 
 ```bash
-git pull
-git submodule update --init --recursive
+cd server
 cmake -S . -B build
 cmake --build build
 ./build/kahoot-server
 ```
 
-This will run server with configuration defined in `config.toml`
+This will run server with configuration defined in `config.toml` (from current working directory).
 
