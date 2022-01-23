@@ -22,8 +22,19 @@ endif()
 target_include_directories(kahoot-server PRIVATE vendor/toml vendor/spdlog/include vendor/doctest vendor/expected/include/tl/)
 target_link_libraries(kahoot-server PRIVATE pthread)
 
-add_test(NAME tests COMMAND tests)
-enable_testing()
+add_executable(kahoot-tests tests/main.cpp src/config.hpp src/config.cpp src/error.hpp src/game.hpp src/server.hpp src/server.cpp src/message.hpp)
+
+set_target_properties(kahoot-tests PROPERTIES CXX_EXTENSIONS OFF)
+target_compile_features(kahoot-tests PUBLIC cxx_std_20)
+target_compile_options(kahoot-tests PRIVATE -Wall -Wextra -Wpedantic)
+if(LTO_SUPPORT)
+    set_target_properties(kahoot-tests PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
+
+target_include_directories(kahoot-tests PRIVATE vendor/toml vendor/spdlog/include vendor/doctest vendor/expected/include/tl/)
+target_link_libraries(kahoot-tests PRIVATE pthread)
+
+
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

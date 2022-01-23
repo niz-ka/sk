@@ -413,6 +413,7 @@ void Server::connect_clients()
             close(connection);
         }
 
+        std::lock_guard<std::mutex> clients_guard(m_clients_mutex);
         m_clients[connection] = Client(connection, in_addr);
     }
 }

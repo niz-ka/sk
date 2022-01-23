@@ -64,7 +64,7 @@ private:
     epoll_event m_epoll_event;
 
     std::unordered_map<int, Client> m_clients;
-    std::mutex m_connection_mutex;
+    std::mutex m_clients_mutex;
 
     std::thread m_resolve_clients;
 };
