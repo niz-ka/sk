@@ -16,6 +16,6 @@ private:
     Question retrieve_question();
 
 private:
-    std::vector<Question> m_questions;
     int m_socket_fd;
+    std::vector<Question> m_questions;
 };

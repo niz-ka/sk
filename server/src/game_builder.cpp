@@ -9,9 +9,12 @@ void GameBuilder::add_question(Question question) {
 Game GameBuilder::build()
 {
     // TODO
+    return Game();
 }
 
 Question GameBuilder::retrieve_question() {
     // We're waiting for one of signals: NQN, ANS, FGC or AGC.
-    
+
+    // TODO
+    return Question();
 }

@@ -10,7 +10,7 @@ check_ipo_supported(RESULT LTO_SUPPORT)
 project(Kahoot VERSION 0.1.20220106 LANGUAGES CXX)
 include(CTest)
 
-add_executable(kahoot-server src/main.cpp src/config.hpp src/config.cpp src/error.hpp src/game.hpp src/server.hpp src/server.cpp src/message.hpp)
+add_executable(kahoot-server src/main.cpp src/config.hpp src/config.cpp src/error.hpp src/game.hpp src/server.hpp src/server.cpp src/message.hpp src/game_builder.hpp src/game_builder.cpp)
 
 set_target_properties(kahoot-server PROPERTIES CXX_EXTENSIONS OFF)
 target_compile_features(kahoot-server PUBLIC cxx_std_20)
