@@ -1,5 +1,8 @@
 #pragma once
 
-class Game {
-
-};
+namespace Kahoot
+{
+    class Game
+    {
+    };
+}

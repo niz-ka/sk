@@ -13,9 +13,9 @@ int main()
 {
     auto logger = spdlog::stdout_color_mt<spdlog::async_factory>("console");
 
-    Config config = Config::from("config.toml");
+    Kahoot::Config config = Kahoot::Config::from("config.toml");
 
-    Server server(std::move(config));
+    Kahoot::Server server(std::move(config));
     server.run();
 
     return 0;

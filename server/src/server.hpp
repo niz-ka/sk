@@ -20,51 +20,54 @@
 #include "config.hpp"
 #include "game.hpp"
 
-class Server
+namespace Kahoot
 {
-public:
-    Server() = delete;
-    Server(Config &&config);
-    void run();
-
-private:
-    class Error
+    class Server
     {
-        std::string m_description;
-
     public:
-        Error() = delete;
-        Error(const std::string &description) : m_description(description) {}
-        Error(std::string &&description) : m_description(std::move(description)) {}
-        ~Error() = default;
+        Server() = delete;
+        Server(Config &&config);
+        void run();
 
-        const std::string &description() { return m_description; }
+    private:
+        class Error
+        {
+            std::string m_description;
+
+        public:
+            Error() = delete;
+            Error(const std::string &description) : m_description(description) {}
+            Error(std::string &&description) : m_description(std::move(description)) {}
+            ~Error() = default;
+
+            const std::string &description() { return m_description; }
+        };
+
+    private:
+        void terminate(const std::string &description);
+        void create_socket();
+        void bind_socket();
+        void listen_on_socket();
+        void init_epoll();
+        void connect_clients();
+        void resolve_clients();
+
+        static tl::expected<void, Error> make_socket_nonblocking(int socket_fd);
+
+    private:
+        std::shared_ptr<spdlog::logger> m_logger;
+
+        Config m_config;
+        int m_socket_fd;
+        sockaddr_in m_address;
+
+        int m_epoll_fd;
+        epoll_event m_epoll_listener;
+        epoll_event m_epoll_event;
+
+        std::unordered_map<int, Client> m_clients;
+        std::mutex m_clients_mutex;
+
+        std::thread m_resolve_clients;
     };
-
-private:
-    void terminate(const std::string &description);
-    void create_socket();
-    void bind_socket();
-    void listen_on_socket();
-    void init_epoll();
-    void connect_clients();
-    void resolve_clients();
-
-    static tl::expected<void, Error> make_socket_nonblocking(int socket_fd);
-
-private:
-    std::shared_ptr<spdlog::logger> m_logger;
-
-    Config m_config;
-    int m_socket_fd;
-    sockaddr_in m_address;
-
-    int m_epoll_fd;
-    epoll_event m_epoll_listener;
-    epoll_event m_epoll_event;
-
-    std::unordered_map<int, Client> m_clients;
-    std::mutex m_clients_mutex;
-
-    std::thread m_resolve_clients;
-};
+}
