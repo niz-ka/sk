@@ -28,7 +28,12 @@ namespace Kahoot
         }
     }
 
-    Message Socket::read_message()
+    auto Socket::fd() const -> int
+    {
+        return m_socket_fd;
+    }
+
+    auto Socket::read_message() -> Message
     {
         // Set epoll event to reading from socket
         m_epoll_event = epoll_event{
@@ -111,7 +116,7 @@ namespace Kahoot
         };
     }
 
-    void Socket::write_message(Message message)
+    auto Socket::write_message(Message message) -> void
     {
         // Maybe there is more elegant way to do this, but I haven't found it yet.
         std::vector<std::byte> buffer(sizeof(MessageHeader) + message.header.content_length);

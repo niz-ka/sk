@@ -52,7 +52,7 @@ namespace Kahoot
         void connect_clients();
         void resolve_clients();
 
-        static tl::expected<void, Error> make_socket_nonblocking(int socket_fd);
+        static auto make_socket_nonblocking(int socket_fd) -> tl::expected<void, Error>;
 
     private:
         std::shared_ptr<spdlog::logger> m_logger;
@@ -67,6 +67,8 @@ namespace Kahoot
 
         std::unordered_map<int, Client> m_clients;
         std::mutex m_clients_mutex;
+        std::condition_variable m_clients_access;
+        bool m_clients_modified;
 
         std::thread m_resolve_clients;
     };

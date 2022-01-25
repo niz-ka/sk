@@ -11,8 +11,10 @@ namespace Kahoot
     {
     public:
         Socket(int socket_fd, uint32_t timeout);
-        Message read_message();
-        void write_message(Message message);
+        auto fd() const -> int;
+        
+        auto read_message() -> Message;
+        auto write_message(Message message) -> void;
 
     private:
         int m_socket_fd;

@@ -10,7 +10,7 @@ namespace Kahoot
     constexpr int QUEUE_LENGTH = 32;
 
     Server::Server(Config &&config)
-        : m_config(std::move(config)), m_socket_fd(-1), m_epoll_fd(-1), m_clients({})
+        : m_config(std::move(config)), m_socket_fd(-1), m_epoll_fd(-1), m_clients({}), m_clients_modified(false)
     {
         m_logger = spdlog::get("console");
         m_address = {
@@ -47,7 +47,7 @@ namespace Kahoot
         throw CriticalError();
     }
 
-    tl::expected<void, Server::Error> Server::make_socket_nonblocking(int socket_fd)
+    auto Server::make_socket_nonblocking(int socket_fd) -> tl::expected<void, Server::Error>
     {
         int flags = fcntl(socket_fd, F_GETFL);
         if (flags != -1)
@@ -386,7 +386,29 @@ namespace Kahoot
             }
 
             std::lock_guard<std::mutex> clients_guard(m_clients_mutex);
-            m_clients[connection] = Client(connection, in_addr);
+            m_clients[connection] = Client(connection, in_addr, m_config.connection_timeout);
+        }
+    }
+
+    void Server::resolve_clients() {
+        std::unique_lock<std::mutex> clients_guard(m_clients_mutex);
+        m_clients_access.wait(clients_guard, [this]{ return m_clients_modified; });
+        std::vector<int> remove_fds(m_clients.size());
+
+        for(auto& [fd, client] : m_clients) {
+            auto message = client.read_message();
+            if(message.header.opcode == Opcode::CreateNewGame) {
+                // Dispatch to new GameBuilder thread.
+                remove_fds.push_back(fd);
+            } else if(message.header.opcode == Opcode::JoinGame) {
+                // Find game and dispatch to appropriate Game thread.
+                remove_fds.push_back(fd);
+            }
+            // We ignore other messages.
+        }
+
+        for(auto fd : remove_fds) {
+            m_clients.erase(fd);
         }
     }
 

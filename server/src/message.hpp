@@ -17,6 +17,7 @@ namespace Kahoot
         FinishQuestion = 0x04,
         FinishGameCreation = 0x05,
         AbortGameCreation = 0x06,
+        JoinGame = 0x07,
         // TODO ...
     };
 
